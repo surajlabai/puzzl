@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>PUZZLEVERSE · 3D puzzle game</title>
+  <!-- Firebase (compat for simplicity) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Three.js (lightweight 3D) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    /* ---------- GLOBAL & RESET ---------- */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    body {
+      background: #0b0d15;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: #fff;
+    }
+    #three-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    /* ---------- MAIN APP (GLASSMORPHISM) ---------- */
+    #app {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 600px;
+      margin: 20px;
+      padding: 30px 28px;
+      border-radius: 48px;
+      background: rgba(15, 20, 30, 0.55);
+      backdrop-filter: blur(15px) saturate(180%);
+      -webkit-backdrop-filter: blur(15px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 30px 50px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      max-height: 90vh;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #3a6ea5 #1a1e2a;
+    }
+    #app::-webkit-scrollbar { width: 4px; }
+    #app::-webkit-scrollbar-track { background: transparent; }
+    #app::-webkit-scrollbar-thumb { background: #3a6ea5; border-radius: 10px; }
+
+    /* ---------- TYPOGRAPHY ---------- */
+    h1, h2, h3 { font-weight: 600; letter-spacing: -0.02em; }
+    h1 {
+      font-size: 2.4rem;
+      background: linear-gradient(135deg, #a5d8ff, #6b9eff, #b197fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+      line-height: 1.2;
+    }
+    .subhead {
+      color: #9aa4c0;
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+      font-weight: 400;
+      letter-spacing: 0.3px;
+    }
+    /* ---------- BUTTONS & INPUTS ---------- */
+    .btn {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: white;
+      padding: 14px 20px;
+      border-radius: 60px;
+      font-weight: 500;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      letter-spacing: 0.2px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+    }
+    .btn:active { transform: translateY(0); }
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6, #6d5dfc);
+      border: none;
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #4f8ff7, #7e6efd);
+      box-shadow: 0 12px 28px rgba(59, 130, 246, 0.5);
+    }
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      border-radius: 40px;
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .input-group label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #9aa4c0;
+      font-weight: 500;
+    }
+    input {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 16px 20px;
+      border-radius: 40px;
+      font-size: 1rem;
+      color: white;
+      outline: none;
+      transition: all 0.2s;
+    }
+    input:focus {
+      border-color: #3b82f6;
+      background: rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    input::placeholder { color: #5a6380; }
+
+    /* ---------- UTILITY ---------- */
+    .hidden { display: none !important; }
+    .flex { display: flex; }
+    .flex-col { flex-direction: column; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 14px; }
+    .mt-3 { margin-top: 16px; }
+    .mb-2 { margin-bottom: 12px; }
+    .text-center { text-align: center; }
+    .w-full { width: 100%; }
+    .error-msg {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+      padding: 12px 18px;
+      border-radius: 60px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+    .success-msg {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      color: #86efac;
+      padding: 12px 18px;
+      border-radius: 60px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    /* ---------- AUTH SCREENS ---------- */
+    .auth-tabs {
+      display: flex;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 6px;
+      border-radius: 60px;
+      margin-bottom: 28px;
+    }
+    .auth-tab {
+      flex: 1;
+      padding: 12px 8px;
+      border-radius: 60px;
+      background: transparent;
+      border: none;
+      color: #9aa4c0;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.95rem;
+    }
+    .auth-tab.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    /* ---------- DASHBOARD ---------- */
+    .level-badge {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 30px;
+      padding: 6px 16px;
+      font-size: 0.85rem;
+      color: #90b8ff;
+      font-weight: 500;
+      display: inline-block;
+    }
+    .progress-bar-bg {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      margin: 16px 0 8px;
+    }
+    .progress-fill {
+      height: 8px;
+      background: linear-gradient(90deg, #3b82f6, #a855f7);
+      border-radius: 20px;
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    .puzzle-card {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 36px;
+      padding: 28px 22px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      margin-top: 20px;
+    }
+
+    /* ---------- PUZZLE ELEMENTS ---------- */
+    .arrow-grid {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+    .arrow-btn {
+      font-size: 3rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      width: 90px;
+      height: 90px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+      color: #b0c4ff;
+    }
+    .arrow-btn:hover {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: #3b82f6;
+      transform: scale(1.05);
+    }
+    .arrow-btn.correct {
+      background: rgba(34, 197, 94, 0.3);
+      border-color: #22c55e;
+      color: #86efac;
+    }
+    .arrow-btn.wrong {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+
+    .number-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      max-width: 280px;
+      margin: 20px auto;
+    }
+    .num-tile {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      aspect-ratio: 1/1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: #d0d9ff;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .num-tile.empty {
+      background: rgba(0, 0, 0, 0.3);
+      border-style: dashed;
+      cursor: default;
+      color: transparent;
+    }
+    .num-tile:hover:not(.empty) {
+      background: rgba(59, 130, 246, 0.3);
+      border-color: #3b82f6;
+    }
+
+    .word-slots {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin: 24px 0;
+      flex-wrap: wrap;
+    }
+    .letter-slot {
+      width: 56px;
+      height: 56px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px dashed rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: white;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .letter-slot.filled {
+      border-style: solid;
+      background: rgba(59, 130, 246, 0.2);
+      border-color: #3b82f6;
+    }
+    .letter-bank {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 16px 0;
+    }
+    .letter-chip {
+      width: 56px;
+      height: 56px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-transform: uppercase;
+    }
+    .letter-chip:hover {
+      background: rgba(59, 130, 246, 0.4);
+      transform: translateY(-3px);
+    }
+    .letter-chip.used {
+      opacity: 0.2;
+      pointer-events: none;
+    }
+
+    /* ---------- CONFETTI POPUP (simple) ---------- */
+    .confetti-pop {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 5rem;
+      z-index: 999;
+      animation: popFade 1.2s ease forwards;
+      pointer-events: none;
+      text-shadow: 0 0 30px #3b82f6;
+    }
+    @keyframes popFade {
+      0% { opacity: 0; transform: translate(-50%, -30%) scale(0.5); }
+      30% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+      70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -70%) scale(0.8); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="three-canvas"></canvas>
+
+  <div id="app">
+    <!-- ========== AUTH SCREEN ========== -->
+    <div id="auth-screen">
+      <h1>PUZZLEVERSE</h1>
+      <div class="subhead">Unlock your mind · 3D puzzle journey</div>
+
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active">Log In</button>
+        <button id="tab-register" class="auth-tab">Register</button>
+      </div>
+
+      <div id="auth-error" class="error-msg hidden"></div>
+      <div id="auth-success" class="success-msg hidden"></div>
+
+      <!-- Login form -->
+      <div id="login-form">
+        <div class="input-group">
+          <label>Username</label>
+          <input type="text" id="login-username" placeholder="your unique username" autocomplete="username">
+        </div>
+        <div class="input-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button id="login-btn" class="btn btn-primary w-full">Log In</button>
+      </div>
+
+      <!-- Register form -->
+      <div id="register-form" class="hidden">
+        <div class="input-group">
+          <label>Username</label>
+          <input type="text" id="reg-username" placeholder="pick a unique name" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label>Password</label>
+          <input type="password" id="reg-password" placeholder="min 6 characters" autocomplete="new-password">
+        </div>
+        <button id="register-btn" class="btn btn-primary w-full">Create Account</button>
+      </div>
+    </div>
+
+    <!-- ========== DASHBOARD / GAME SCREEN ========== -->
+    <div id="game-screen" class="hidden">
+      <div class="flex" style="justify-content: space-between; align-items: center;">
+        <h2 id="welcome-user" style="font-size: 1.4rem;">Hi, Player</h2>
+        <button id="logout-btn" class="btn btn-small">Logout</button>
+      </div>
+      <div class="mt-3 flex" style="justify-content: space-between; align-items: center;">
+        <span class="level-badge" id="level-display">Level 1</span>
+        <span style="color: #9aa4c0; font-size: 0.9rem;" id="progress-text">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+
+      <div id="puzzle-container" class="puzzle-card">
+        <!-- Dynamic puzzle content -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // 1. FIREBASE CONFIGURATION (with your RTDB URL)
+    // ============================================================
+    const firebaseConfig = {
+       apiKey: "AIzaSyA6DS_5kVMF4DvOGbd-xQEYih53YSrpuxE",
+  authDomain: "solvepuzzl.firebaseapp.com",
+  databaseURL: "https://solvepuzzl-default-rtdb.firebaseio.com",
+  projectId: "solvepuzzl",
+  storageBucket: "solvepuzzl.firebasestorage.app",
+  messagingSenderId: "291428818242",
+  appId: "1:291428818242:web:8f56399e61f17070febcdb",
+  measurementId: "G-YB6R1N9KEY"
+    };
+
+    // Initialize Firebase (compat)
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // ============================================================
+    // 2. GLOBAL STATE
+    // ============================================================
+    let currentUser = null;          // Firebase user
+    let userData = null;             // { username, level, puzzleState }
+    let currentPuzzle = null;        // generated puzzle object
+    let currentPuzzleType = null;    // 'arrow' | 'number' | 'word'
+
+    // ============================================================
+    // 3. DOM ELEMENTS
+    // ============================================================
+    const authScreen = document.getElementById('auth-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const authError = document.getElementById('auth-error');
+    const authSuccess = document.getElementById('auth-success');
+    const welcomeUser = document.getElementById('welcome-user');
+    const levelDisplay = document.getElementById('level-display');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const puzzleContainer = document.getElementById('puzzle-container');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    // ============================================================
+    // 4. AUTH UI LOGIC
+    // ============================================================
+    function showError(msg) {
+      authError.textContent = msg;
+      authError.classList.remove('hidden');
+      authSuccess.classList.add('hidden');
+      setTimeout(() => authError.classList.add('hidden'), 5000);
+    }
+    function showSuccess(msg) {
+      authSuccess.textContent = msg;
+      authSuccess.classList.remove('hidden');
+      authError.classList.add('hidden');
+      setTimeout(() => authSuccess.classList.add('hidden'), 4000);
+    }
+
+    tabLogin.addEventListener('click', () => {
+      tabLogin.classList.add('active');
+      tabRegister.classList.remove('active');
+      loginForm.classList.remove('hidden');
+      registerForm.classList.add('hidden');
+    });
+    tabRegister.addEventListener('click', () => {
+      tabRegister.classList.add('active');
+      tabLogin.classList.remove('active');
+      registerForm.classList.remove('hidden');
+      loginForm.classList.add('hidden');
+    });
+
+    // --- REGISTER ---
+    document.getElementById('register-btn').addEventListener('click', async () => {
+      const username = document.getElementById('reg-username').value.trim();
+      const password = document.getElementById('reg-password').value;
+
+      if (!username || username.length < 3) return showError('Username must be at least 3 characters.');
+      if (!password || password.length < 6) return showError('Password must be at least 6 characters.');
+
+      try {
+        // 1. Check if username already exists in Firestore (users collection)
+        const usersRef = db.collection('users');
+        const querySnapshot = await usersRef.where('username', '==', username).get();
+        if (!querySnapshot.empty) {
+          return showError('Username already exists. Please choose a unique name.');
+        }
+
+        // 2. Create Firebase Auth user (email will be username@placeholder.com)
+        const email = `${username.toLowerCase()}@puzzleverse.game`;
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+
+        // 3. Store user data in Firestore (link UID to username)
+        await db.collection('users').doc(user.uid).set({
+          username: username,
+          level: 1,
+          puzzleState: {},
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        showSuccess('Account created! You are now logged in.');
+        // Auth state listener will handle the rest
+      } catch (error) {
+        console.error(error);
+        if (error.code === 'auth/email-already-in-use') {
+          showError('Username already exists (auth). Please choose a unique name.');
+        } else {
+          showError(error.message);
+        }
+      }
+    });
+
+    // --- LOGIN ---
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      if (!username || !password) return showError('Please enter username and password.');
+
+      try {
+        const email = `${username.toLowerCase()}@puzzleverse.game`;
+        await auth.signInWithEmailAndPassword(email, password);
+        // Auth listener will load data
+      } catch (error) {
+        console.error(error);
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+          showError('Invalid username or password.');
+        } else {
+          showError(error.message);
+        }
+      }
+    });
+
+    // --- LOGOUT ---
+    logoutBtn.addEventListener('click', () => {
+      auth.signOut();
+    });
+
+    // ============================================================
+    // 5. AUTH STATE LISTENER (auto-resume)
+    // ============================================================
+    auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        currentUser = user;
+        // Load user data from Firestore
+        const doc = await db.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          userData = doc.data();
+        } else {
+          // fallback (should not happen)
+          userData = { username: 'Player', level: 1, puzzleState: {} };
+        }
+        // Switch UI
+        authScreen.classList.add('hidden');
+        gameScreen.classList.remove('hidden');
+        welcomeUser.textContent = `Hi, ${userData.username}`;
+        // Load level and resume
+        await loadLevelAndResume();
+      } else {
+        currentUser = null;
+        userData = null;
+        authScreen.classList.remove('hidden');
+        gameScreen.classList.add('hidden');
+        puzzleContainer.innerHTML = '';
+      }
+    });
+
+    // ============================================================
+    // 6. LEVEL & PUZZLE GENERATION
+    // ============================================================
+    const PUZZLE_TYPES = ['arrow', 'number', 'word'];
+
+    // Generate puzzle based on level number
+    function generatePuzzleForLevel(level) {
+      const type = PUZZLE_TYPES[(level - 1) % PUZZLE_TYPES.length];
+      let puzzle = null;
+
+      if (type === 'arrow') {
+        // Arrow: sequence of 4 directions that must be clicked in correct order
+        const directions = ['↑', '↓', '←', '→'];
+        const correct = [];
+        for (let i = 0; i < 4; i++) {
+          correct.push(directions[Math.floor(Math.random() * 4)]);
+        }
+        puzzle = {
+          type: 'arrow',
+          sequence: correct,
+          userSequence: [],
+          description: 'Click the arrows in the correct order (memorize the sequence!)'
+        };
+      } else if (type === 'number') {
+        // Number: 3x3 sliding puzzle with numbers 1-8
+        const tiles = [1,2,3,4,5,6,7,8,0]; // 0 = empty
+        // shuffle
+        for (let i = tiles.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+        }
+        puzzle = {
+          type: 'number',
+          tiles: [...tiles],
+          size: 3,
+          description: 'Slide the tiles to order 1-8 (empty spot in bottom right)'
+        };
+      } else if (type === 'word') {
+        // Word: rearrange jumbled letters to form a word
+        const words = ['PUZZLE', 'GAME', 'BRAIN', 'LOGIC', 'SMART', 'CODE', 'PLAY', 'FUN'];
+        const word = words[Math.floor(Math.random() * words.length)];
+        const jumbled = word.split('').sort(() => Math.random() - 0.5).join('');
+        puzzle = {
+          type: 'word',
+          original: word,
+          jumbled: jumbled,
+          userAnswer: '',
+          description: `Unjumble the letters to form a word`
+        };
+      }
+      return puzzle;
+    }
+
+    // Load level and resume from saved state if any
+    async function loadLevelAndResume() {
+      if (!userData) return;
+      const level = userData.level || 1;
+
+      // Update UI
+      levelDisplay.textContent = `Level ${level}`;
+      const progressPercent = Math.min(100, Math.round(((level - 1) / 10) * 100));
+      progressFill.style.width = `${progressPercent}%`;
+      progressText.textContent = `${progressPercent}%`;
+
+      // Generate or resume puzzle
+      const savedState = userData.puzzleState || {};
+
+      // If saved state exists and matches current level, resume
+      if (savedState.level === level && savedState.puzzle && savedState.type) {
+        currentPuzzle = savedState.puzzle;
+        currentPuzzleType = savedState.type;
+      } else {
+        // New puzzle
+        currentPuzzle = generatePuzzleForLevel(level);
+        currentPuzzleType = currentPuzzle.type;
+        // Save initial state
+        await savePuzzleState();
+      }
+
+      renderPuzzle();
+    }
+
+    // Save current puzzle state to Firestore
+    async function savePuzzleState() {
+      if (!currentUser) return;
+      const level = userData.level || 1;
+      await db.collection('users').doc(currentUser.uid).update({
+        puzzleState: {
+          level: level,
+          puzzle: currentPuzzle,
+          type: currentPuzzleType
+        }
+      });
+    }
+
+    // Advance to next level
+    async function advanceLevel() {
+      const newLevel = (userData.level || 1) + 1;
+      userData.level = newLevel;
+      // Clear saved puzzle state (new puzzle will be generated on next load)
+      userData.puzzleState = {};
+      await db.collection('users').doc(currentUser.uid).update({
+        level: newLevel,
+        puzzleState: {}
+      });
+
+      // Show success animation
+      const pop = document.createElement('div');
+      pop.className = 'confetti-pop';
+      pop.textContent = '🎉';
+      document.body.appendChild(pop);
+      setTimeout(() => pop.remove(), 1300);
+
+      // Load next level
+      await loadLevelAndResume();
+    }
+
+    // ============================================================
+    // 7. PUZZLE RENDERING & INTERACTION
+    // ============================================================
+    function renderPuzzle() {
+      if (!currentPuzzle || !puzzleContainer) return;
+
+      const type = currentPuzzle.type;
+      let html = '';
+
+      if (type === 'arrow') {
+        html = `
+          <p style="color: #9aa4c0; margin-bottom: 16px;">${currentPuzzle.description}</p>
+          <div class="arrow-grid" id="arrow-grid">
+            ${['↑', '↓', '←', '→'].map(dir => `
+              <div class="arrow-btn" data-dir="${dir}">${dir}</div>
+            `).join('')}
+          </div>
+          <div id="arrow-feedback" style="min-height: 30px; text-align: center; color: #9aa4c0;"></div>
+          <button id="arrow-reset" class="btn btn-small mt-3" style="margin: 0 auto; display: block;">Reset sequence</button>
+        `;
+      } else if (type === 'number') {
+        const tiles = currentPuzzle.tiles;
+        html = `
+          <p style="color: #9aa4c0; margin-bottom: 16px;">${currentPuzzle.description}</p>
+          <div class="number-grid" id="number-grid">
+            ${tiles.map((num, idx) => `
+              <div class="num-tile ${num === 0 ? 'empty' : ''}" data-index="${idx}">${num === 0 ? '' : num}</div>
+            `).join('')}
+          </div>
+          <div id="number-feedback" style="text-align: center; color: #9aa4c0; margin-top: 12px;"></div>
+        `;
+      } else if (type === 'word') {
+        const jumbled = currentPuzzle.jumbled.split('');
+        const slots = currentPuzzle.original.split('').map((_, i) => {
+          const ch = currentPuzzle.userAnswer[i] || '';
+          return `<div class="letter-slot ${ch ? 'filled' : ''}" data-slot="${i}">${ch}</div>`;
+        }).join('');
+        const bank = jumbled.map((ch, i) => {
+          // Track usage simple: we'll re-render on each click
+          return `<div class="letter-chip" data-letter="${ch}" data-bank-index="${i}">${ch}</div>`;
+        }).join('');
+
+        html = `
+          <p style="color: #9aa4c0; margin-bottom: 16px;">${currentPuzzle.description}</p>
+          <div class="word-slots" id="word-slots">${slots}</div>
+          <div class="letter-bank" id="letter-bank">${bank}</div>
+          <div id="word-feedback" style="text-align: center; color: #9aa4c0; margin-top: 12px;"></div>
+        `;
+      }
+
+      puzzleContainer.innerHTML = html;
+
+      // Attach event listeners based on type
+      if (type === 'arrow') attachArrowEvents();
+      else if (type === 'number') attachNumberEvents();
+      else if (type === 'word') attachWordEvents();
+    }
+
+    // ---------- ARROW PUZZLE ----------
+    function attachArrowEvents() {
+      const grid = document.getElementById('arrow-grid');
+      const feedback = document.getElementById('arrow-feedback');
+      const resetBtn = document.getElementById('arrow-reset');
+      if (!grid) return;
+
+      // For memorization: show sequence briefly
+      const seq = currentPuzzle.sequence;
+      let step = 0;
+
+      // Auto-play sequence once at start
+      (function showSequence(i = 0) {
+        if (i >= seq.length) return;
+        const btns = grid.querySelectorAll('.arrow-btn');
+        btns.forEach(b => b.classList.remove('correct'));
+        const target = [...btns].find(b => b.dataset.dir === seq[i]);
+        if (target) target.classList.add('correct');
+        setTimeout(() => {
+          if (target) target.classList.remove('correct');
+          if (i + 1 < seq.length) showSequence(i + 1);
+          else {
+            // all clear
+          }
+        }, 500);
+      })();
+
+      grid.addEventListener('click', (e) => {
+        const btn = e.target.closest('.arrow-btn');
+        if (!btn) return;
+        const dir = btn.dataset.dir;
+        // Check if correct next in sequence
+        if (currentPuzzle.sequence[currentPuzzle.userSequence.length] === dir) {
+          currentPuzzle.userSequence.push(dir);
+          btn.classList.add('correct');
+          if (currentPuzzle.userSequence.length === currentPuzzle.sequence.length) {
+            feedback.innerHTML = '<span style="color: #86efac;">✓ Correct! Level complete.</span>';
+            setTimeout(() => advanceLevel(), 800);
+          } else {
+            feedback.textContent = `Progress: ${currentPuzzle.userSequence.length}/${currentPuzzle.sequence.length}`;
+          }
+        } else {
+          // wrong
+          btn.classList.add('wrong');
+          setTimeout(() => btn.classList.remove('wrong'), 300);
+          currentPuzzle.userSequence = [];
+          feedback.innerHTML = '<span style="color: #fca5a5;">✗ Wrong sequence. Try again.</span>';
+          // replay sequence
+          setTimeout(() => {
+            (function replay(i = 0) {
+              if (i >= seq.length) return;
+              const btns = grid.querySelectorAll('.arrow-btn');
+              btns.forEach(b => b.classList.remove('correct'));
+              const target = [...btns].find(b => b.dataset.dir === seq[i]);
+              if (target) target.classList.add('correct');
+              setTimeout(() => {
+                if (target) target.classList.remove('correct');
+                if (i + 1 < seq.length) replay(i + 1);
+              }, 400);
+            })();
+          }, 500);
+        }
+        savePuzzleState();
+      });
+
+      resetBtn.addEventListener('click', () => {
+        currentPuzzle.userSequence = [];
+        feedback.textContent = '';
+        grid.querySelectorAll('.arrow-btn').forEach(b => b.classList.remove('correct', 'wrong'));
+        savePuzzleState();
+      });
+    }
+
+    // ---------- NUMBER PUZZLE (sliding) ----------
+    function attachNumberEvents() {
+      const grid = document.getElementById('number-grid');
+      const feedback = document.getElementById('number-feedback');
+      if (!grid) return;
+
+      grid.addEventListener('click', (e) => {
+        const tile = e.target.closest('.num-tile');
+        if (!tile || tile.classList.contains('empty')) return;
+        const idx = parseInt(tile.dataset.index);
+        const tiles = currentPuzzle.tiles;
+        // find empty index
+        const emptyIdx = tiles.indexOf(0);
+        // check adjacency
+        const row = Math.floor(idx / 3), col = idx % 3;
+        const emptyRow = Math.floor(emptyIdx / 3), emptyCol = emptyIdx % 3;
+        if (Math.abs(row - emptyRow) + Math.abs(col - emptyCol) === 1) {
+          // swap
+          [tiles[idx], tiles[emptyIdx]] = [tiles[emptyIdx], tiles[idx]];
+          currentPuzzle.tiles = tiles;
+          renderPuzzle();
+          // check win
+          if (isNumberPuzzleSolved(tiles)) {
+            feedback.innerHTML = '<span style="color: #86efac;">✓ Solved! Level complete.</span>';
+            setTimeout(() => advanceLevel(), 800);
+          }
+          savePuzzleState();
+        }
+      });
+    }
+
+    function isNumberPuzzleSolved(tiles) {
+      const target = [1,2,3,4,5,6,7,8,0];
+      return tiles.every((v, i) => v === target[i]);
+    }
+
+    // ---------- WORD PUZZLE ----------
+    function attachWordEvents() {
+      const slots = document.querySelectorAll('.letter-slot');
+      const bank = document.getElementById('letter-bank');
+      const feedback = document.getElementById('word-feedback');
+
+      // Simple approach: clicking a bank letter fills next empty slot
+      bank.addEventListener('click', (e) => {
+        const chip = e.target.closest('.letter-chip');
+        if (!chip || chip.classList.contains('used')) return;
+        const letter = chip.dataset.letter;
+        // find first empty slot
+        const currentAnswer = currentPuzzle.userAnswer || '';
+        if (currentAnswer.length >= currentPuzzle.original.length) return;
+        currentPuzzle.userAnswer = currentAnswer + letter;
+        chip.classList.add('used');
+
+        // re-render slots
+        renderPuzzle(); // simple re-render (will re-attach events)
+
+        // Check if answer is complete
+        if (currentPuzzle.userAnswer.length === currentPuzzle.original.length) {
+          if (currentPuzzle.userAnswer === currentPuzzle.original) {
+            feedback.innerHTML = '<span style="color: #86efac;">✓ Correct word! Level complete.</span>';
+            setTimeout(() => advanceLevel(), 800);
+          } else {
+            feedback.innerHTML = '<span style="color: #fca5a5;">✗ Not quite. Try again.</span>';
+            // reset after delay
+            setTimeout(() => {
+              currentPuzzle.userAnswer = '';
+              renderPuzzle();
+            }, 1000);
+          }
+        }
+        savePuzzleState();
+      });
+
+      // Click on slot to remove letter (optional)
+      slots.forEach(slot => {
+        slot.addEventListener('click', () => {
+          const idx = parseInt(slot.dataset.slot);
+          if (currentPuzzle.userAnswer && currentPuzzle.userAnswer[idx]) {
+            // remove that letter
+            let arr = currentPuzzle.userAnswer.split('');
+            arr.splice(idx, 1);
+            currentPuzzle.userAnswer = arr.join('');
+            renderPuzzle();
+            savePuzzleState();
+          }
+        });
+      });
+    }
+
+    // ============================================================
+    // 8. THREE.JS BACKGROUND (lightweight 3D animation)
+    // ============================================================
+    (function initThree() {
+      const canvas = document.getElementById('three-canvas');
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b0d15);
+
+      const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 12);
+
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Lights
+      const ambient = new THREE.AmbientLight(0x404060);
+      scene.add(ambient);
+      const light1 = new THREE.PointLight(0x6b9eff, 1, 30);
+      light1.position.set(5, 5, 8);
+      scene.add(light1);
+      const light2 = new THREE.PointLight(0xa855f7, 0.8, 30);
+      light2.position.set(-5, -3, 6);
+      scene.add(light2);
+
+      // Create floating particles (small cubes)
+      const particles = [];
+      const geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+      for (let i = 0; i < 120; i++) {
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(0.6 + Math.random() * 0.3, 0.8, 0.6),
+          emissive: new THREE.Color().setHSL(0.6 + Math.random() * 0.3, 0.6, 0.2),
+          roughness: 0.3,
+          metalness: 0.2
+        });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.x = (Math.random() - 0.5) * 25;
+        cube.position.y = (Math.random() - 0.5) * 20;
+        cube.position.z = (Math.random() - 0.5) * 20 - 5;
+        cube.rotation.x = Math.random() * Math.PI;
+        cube.rotation.y = Math.random() * Math.PI;
+        cube.userData = {
+          speedX: (Math.random() - 0.5) * 0.005,
+          speedY: (Math.random() - 0.5) * 0.005,
+          speedZ: (Math.random() - 0.5) * 0.005,
+          rotSpeed: (Math.random() - 0.5) * 0.02
+        };
+        scene.add(cube);
+        particles.push(cube);
+      }
+
+      // Central wireframe icosahedron
+      const icoGeo = new THREE.IcosahedronGeometry(3, 1);
+      const icoMat = new THREE.MeshStandardMaterial({
+        color: 0x3b82f6,
+        wireframe: true,
+        emissive: 0x1e3a8a,
+        transparent: true,
+        opacity: 0.3
+      });
+      const ico = new THREE.Mesh(icoGeo, icoMat);
+      ico.position.z = -5;
+      scene.add(ico);
+
+      // Animation loop
+      let clock = new THREE.Clock();
+      function animate() {
+        const delta = clock.getDelta();
+        const elapsed = performance.now() * 0.001;
+
+        particles.forEach(p => {
+          p.position.x += p.userData.speedX;
+          p.position.y += p.userData.speedY;
+          p.position.z += p.userData.speedZ;
+          p.rotation.x += p.userData.rotSpeed * 0.5;
+          p.rotation.y += p.userData.rotSpeed;
+          // wrap around
+          if (p.position.x > 13) p.position.x = -13;
+          if (p.position.x < -13) p.position.x = 13;
+          if (p.position.y > 11) p.position.y = -11;
+          if (p.position.y < -11) p.position.y = 11;
+        });
+
+        ico.rotation.x = Math.sin(elapsed * 0.2) * 0.3;
+        ico.rotation.y += 0.002;
+        ico.rotation.z += 0.001;
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    })();
+
+    // ============================================================
+    // 9. UTILITY: Prefill random login for demo? No, keep clean.
+    // ============================================================
+    // (Optional) For quick testing, but we leave it.
+
+    // ============================================================
+    // 10. FIRESTORE RULES (see step-by-step instructions below)
+    // ============================================================
+    console.log('🚀 PuzzleVerse ready. Ensure Firestore rules allow username check.');
+  </script>
+</body>
+</html>
